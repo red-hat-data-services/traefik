@@ -1,42 +1,16 @@
-# <COPIED FROM Dockerfile.build>
-FROM golang:1.16-alpine as builder
+FROM registry.access.redhat.com/ubi8/go-toolset:latest as builder
+USER root
+ENV GOPATH=/go
 
-RUN apk --update upgrade \
-    && apk --no-cache --no-progress add git mercurial bash gcc musl-dev curl tar ca-certificates tzdata \
-    && update-ca-certificates \
-    && rm -rf /var/cache/apk/*
-
-RUN go get golang.org/x/lint/golint \
-&& go get github.com/client9/misspell/cmd/misspell
-
-# Which docker version to test on
-ARG DOCKER_VERSION=18.09.7
-
-# Download docker
-RUN mkdir -p /usr/local/bin \
-    && curl -fL https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz \
-    | tar -xzC /usr/local/bin --transform 's#^.+/##x'
-
-# Download go-bindata binary to bin folder in $GOPATH
-RUN mkdir -p /usr/local/bin \
-    && curl -fsSL -o /usr/local/bin/go-bindata https://github.com/containous/go-bindata/releases/download/v1.0.0/go-bindata \
-    && chmod +x /usr/local/bin/go-bindata
-
-# Download misspell binary to bin folder in $GOPATH
-RUN  curl -sfL https://raw.githubusercontent.com/client9/misspell/master/install-misspell.sh | bash -s -- -b $GOPATH/bin v0.3.4
+# how can we have this without internet access? 🤔
+RUN go get github.com/containous/go-bindata/...
 
 WORKDIR /go/src/github.com/traefik/traefik
-
-# Download go modules
-COPY go.mod .
-COPY go.sum .
-RUN GO111MODULE=on GOPROXY=https://proxy.golang.org go mod download
-
 COPY . /go/src/github.com/traefik/traefik
-# </COPIED FROM Dockerfile.build>
 
-# unit-test and build traefik - will build into ./dist
-RUN ./script/make.sh generate test-unit binary
+RUN PATH="$PATH:/go/bin" go generate
+RUN go test -v ./...
+RUN go build -o dist/traefik ./cmd/traefik
 
 # UBI-based final image
 FROM registry.access.redhat.com/ubi8/ubi-micro:8.4
